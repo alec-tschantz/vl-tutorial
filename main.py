@@ -1,42 +1,42 @@
+import jax.numpy as jnp
+
 import numpy as np
 from numpy.linalg import inv
 from numpy.random import multivariate_normal as mvn
 
-from laplace import Model, Data, fit
+import laplace
 
-num_data = 100
+num_obs = 100
 
-def likelihood_fn(params):
-    design_matrix = np.column_stack((np.ones(num_data), np.linspace(1, 100, num_data)))
-    design_matrix[:, 1] = design_matrix[:, 1] - np.mean(design_matrix[:, 1])
-    return np.matmul(design_matrix, params)
+params = np.array([[0.5], [0.1]])
+hyperparams = np.array([[3]])
+precision_components = np.array([np.eye(num_obs)])
+precision = np.exp(hyperparams[0]) * precision_components[0]
 
 
-prior_exp = np.array([0, 0])
-prior_cov = np.eye(2) * 1
-prior_exp_hyp = np.array([4])
-prior_cov_hyp = np.array([[1]])
+def likelihood_fn(params: np.ndarray) -> np.ndarray:
+    design = np.column_stack((np.ones(num_obs), np.linspace(1, 100, num_obs)))
+    design[:, 1] = design[:, 1] - np.mean(design[:, 1])
+    return np.dot(design, params)
 
-num_data = 100
-Q = np.array([np.eye(num_data)])
 
-true_params = np.array([0.5, 0.1])
-true_hyp = np.array([3])
+noise = mvn(np.zeros(num_obs), inv(precision), 1)
+data = likelihood_fn(params) + noise.T
 
-design_matrix = np.column_stack((np.ones(num_data), np.linspace(1, 100, num_data)))
-design_matrix[:, 1] = design_matrix[:, 1] - np.mean(design_matrix[:, 1])
+beta_prior_mu = np.array([[0.0], [0.0]])
+beta_prior_cov = np.eye(2) * 1
+lambda_prior_mu = np.array([[4.0]])
+lambda_prior_cov = np.array([[1.0]])
 
-model = Model(prior_exp, prior_cov, prior_exp_hyp, prior_cov_hyp, design_matrix, likelihood_fn)
+beta_post_mu, lambda_post_mu, beta_post_cov, vfe = laplace.invert(
+    jnp.array(beta_prior_mu),
+    jnp.array(beta_prior_cov),
+    jnp.array(lambda_prior_mu),
+    jnp.array(lambda_prior_cov),
+    jnp.array(data),
+    jnp.array(precision_components),
+    likelihood_fn,
+)
 
-P = np.zeros((num_data, num_data))
-for i in range(len(Q)):
-    P = P + np.exp(true_hyp[i]) * Q[i]
-
-e = mvn(np.zeros(num_data), inv(P), 1)
-y = likelihood_fn(true_params) + e
-
-data = Data(y, Q)
-
-params, hyper_params, cov, vfe  = fit(model, data)
-print(params)
-print(hyper_params)
+print(beta_post_mu)
+print(lambda_post_mu)
